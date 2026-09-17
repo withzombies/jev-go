@@ -36,5 +36,12 @@ Markdown lint, vulnerability scan, and module tidiness. No runtime dependency ad
 
 GitHub's Markdown API rendered all six reader-facing documents, preserving ten
 expandable executable examples. Link checking accounts for normalized custom
-anchors and derives heading slugs from rendered heading text. Hosted CI and the
-published repository rendering remain to be checked after push.
+anchors and derives heading slugs from rendered heading text. All 157 relative links and anchors passed. The guide's question-set example also
+compiles in isolation. GitHub's repository content API confirmed the published
+README and all four guides/reference pages render as HTML, with the expected
+tables and ten expandable examples.
+
+Implementation commit be2efd4 passed all three jobs in
+[CI run 35267943620](https://github.com/withzombies/jev-go/actions/runs/35267943620):
+Go 1.26.x (13s), Go stable (39s), and Quality (45s). The quality job includes the
+new non-mutating documentation freshness gate. No hosted fixes were needed.
