@@ -22,3 +22,15 @@ Inject a standard *http.Client, leaving ownership with caller. Consumer-defined 
 - HTTP RED: client tests failed on missing Client/Config/NewClient/APIError. GREEN: `go test -race ./...` passed with real local HTTP tests, injected transport fault tests and concurrent client reuse.
 - Malformed numeric response RED: seven cases accepted invalid probabilities/confidences/scores and one accepted an empty model. GREEN after narrowly adding numeric distribution and model checks.
 - `go build ./...`, `go vet ./...`, and `git diff --check` passed for the library increment.
+- CLI RED: command tests failed on missing run/assess/catalog/command types and functions. GREEN: `go test -race ./...` passed including exact threshold boundaries, invalid evidence, dependency errors, empty input, option parsing, and an actual-client/httptest integration.
+- Offline coverage: library 93.2%, command 93.3%. Build and vet passed after adding the command.
+- Go directive normalized to 1.26.0 to match the documented Go 1.26 minimum, rather than unnecessarily requiring the installed patch release.
+- Cancellation regression RED: `TestCommandCancellationUnblocksInput` reproduced waiting on an open input pipe after context cancellation. GREEN fix: the composition root accepts an explicit io.ReadCloser and closes process input on cancellation using context.AfterFunc. The injected core run function still only requires io.Reader.
+
+## Final verification and review
+
+- A separate temporary Go module imported this checkout with a local replace directive and used the actual Go client against TypeSafe: listed two models and received typed Noul, Choice and Score answers from jev-1.13.0 (362 input / 62 output tokens).
+- Actual CLI pipeline with a synthetic arithmetic patch: all 30 answers returned, JSON decoded successfully, verdict approve, model jev-1.13.0 (3285 input / 585 output tokens). This verifies integration, not review accuracy. No real PR content was sent.
+- Post-cancellation-fix gates: go test -race ./..., go build ./..., go build -o triage ./cmd/triage, go vet ./..., gofmt -l . and git diff --check all passed. The local ignored ./triage binary is ready to run.
+- Reviewed against plan: two endpoint methods, standard-library dependencies, concrete public client, explicit HTTP injection, typed JSON questions/answers, client ownership and cancellation, no retries/global configuration, independent consumer smoke, editable stdin example, pure policy and complete reports. No TODO/FIXME or subprocess/GitHub calls in production code.
+- Library is locally usable and committed; no remote repository was created or published. README documents both local replace usage and future installation.
