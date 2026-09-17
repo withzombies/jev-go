@@ -55,7 +55,8 @@ timeouts, and cancellation of superseded runs. They never call the live Jev API.
 Hosted CI verifies pushes to the published GitHub repository.
 
 [AGENTS.md](../AGENTS.md) describes the repository layout, design constraints, and agent
-verification workflow. Task records live in [plans/active](../plans/active).
+verification workflow. Local task records may live in `plans/active`; the
+`plans/` directory is ignored and is not part of the repository.
 
 ## Maintaining documentation
 

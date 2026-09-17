@@ -5,5 +5,5 @@
     "MD013": false
   },
   "globs": ["**/*.md"],
-  "ignores": [".bin/**", "node_modules/**"]
+  "ignores": [".bin/**", "node_modules/**", "plans/**"]
 }

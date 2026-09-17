@@ -10,7 +10,7 @@ library dependency or a GitHub automation service.
 - Root Go files implement the HTTP client, wire types, and errors.
 - Root external-package tests and executable examples exercise the public API.
 - `cmd/triage` owns flags, environment, process I/O, the question catalog, and verdict policy.
-- `plans/active` holds task intent, decisions, and verification evidence.
+- Local task records may live in `plans/active`; `plans/` is ignored and must not be committed.
 - The Makefile and lint configuration define the checks used locally and in CI.
 
 ## Go design
