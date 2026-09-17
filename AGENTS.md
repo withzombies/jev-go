@@ -34,7 +34,7 @@ Follow [Effective Go](https://go.dev/doc/effective_go),
   access process I/O, exit the process, log secrets, or impose triage policy.
 - Preserve the distinction between byte budgets and token context limits.
   The library rejects oversized requests; truncation belongs to the application.
-- Avoid unnecessary abstractions, global mutable state, automatic retries,
+- Avoid unnecessary abstractions, global mutable state, implicit retries,
   speculative features, and unmeasured optimizations.
 - Remove dead code. When an approved change replaces an API, remove the old API
   rather than adding compatibility shims or deprecation layers.

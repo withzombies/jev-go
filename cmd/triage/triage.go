@@ -15,7 +15,7 @@ import (
 
 // Consumers define the interface they need; *jev.Client satisfies this directly.
 type evaluator interface {
-	SystemOne(context.Context, jev.Request) (*jev.Response, error)
+	SystemOne(context.Context, jev.Request, ...jev.RequestOption) (*jev.Response, error)
 }
 
 const defaultContextBytes int64 = 24 * 1024

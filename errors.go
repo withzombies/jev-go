@@ -1,7 +1,9 @@
 package jev
 
 import (
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
 )
 
@@ -48,4 +50,25 @@ type RequestSizeError struct {
 // Error reports the measured byte count and configured limit.
 func (e *RequestSizeError) Error() string {
 	return fmt.Sprintf("jev: encoded request is %d bytes, exceeds limit of %d bytes", e.Size, e.Limit)
+}
+
+// TransportError reports a connection or response-body delivery failure. Err is
+// retained for errors.Is and errors.As, including context deadlines.
+type TransportError struct {
+	// Endpoint contains the HTTP method and relative API path.
+	Endpoint string
+	// Err is the underlying network or body-read error.
+	Err error
+}
+
+// Error describes the failed operation and underlying cause.
+func (e *TransportError) Error() string { return fmt.Sprintf("jev: %s: %v", e.Endpoint, e.Err) }
+
+// Unwrap returns the underlying cause.
+func (e *TransportError) Unwrap() error { return e.Err }
+
+// Timeout reports whether the cause implements net.Error with Timeout true.
+func (e *TransportError) Timeout() bool {
+	var timeout net.Error
+	return errors.As(e.Err, &timeout) && timeout.Timeout()
 }

@@ -19,7 +19,7 @@ import (
 
 type evaluatorFunc func(context.Context, jev.Request) (*jev.Response, error)
 
-func (f evaluatorFunc) SystemOne(ctx context.Context, r jev.Request) (*jev.Response, error) {
+func (f evaluatorFunc) SystemOne(ctx context.Context, r jev.Request, _ ...jev.RequestOption) (*jev.Response, error) {
 	return f(ctx, r)
 }
 

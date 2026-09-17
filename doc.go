@@ -13,12 +13,15 @@
 // # Configuration and ownership
 //
 // The caller supplies credentials through Config; this package never reads the
-// environment or logs request data. A nil Config.HTTPClient uses a ten-second
+// environment. Logging requires an injected logger. A nil Config.HTTPClient uses a ten-second
 // timeout. Inject a custom *http.Client for transport and timeout control.
 // The client is safe for concurrent calls, but callers must not mutate shared
 // request data or the injected HTTP client while calls are in progress.
-// Each method accepts a context, makes a single request, and closes its response
-// body. There are no automatic retries, pagination, or input truncation.
+// Each method accepts a context and closes every response body. Retries are opt-in
+// through Config.Retry or WithRetry; the zero policy makes one attempt. Per-call
+// options override headers and attempt timeout without mutating client defaults.
+// There is no pagination or input truncation. ConfigFromEnv accepts an explicit
+// lookup function, and never creates a logger or enables retries.
 //
 // # Limits and errors
 //

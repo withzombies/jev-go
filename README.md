@@ -88,9 +88,34 @@ func main() {
 - `Config.MaxRequestBytes` is an optional cap on the complete encoded JSON request, including state, questions, model, and JSON escaping. Zero disables it; negative values are invalid. Oversized requests return `*jev.RequestSizeError` with `Size` and `Limit` before HTTP. The client never truncates input. For example, set `MaxRequestBytes: 64 * 1024` to apply a 64 KiB request budget. This is a byte cap, not a tokenizer or a guarantee that Jev will accept the request.
 - `Request.Model` defaults to `jev-latest`; set a versioned model to compare repeatable experiments. The alias can change over time.
 - Both methods accept a context. Transport errors retain their cause for `errors.Is` and `errors.As`.
-- Non-2xx responses return `*jev.APIError` with `StatusCode`, `Body`, `Headers`, `RequestID`, and best-effort `ErrorType` from `detail.error_type`. Use `errors.As` to inspect the error; `ErrorType == "max_tokens_exceeded"` identifies a server context-limit rejection. Its error string omits the body, which may echo submitted content. Retry headers are accessible to callers; **there are no automatic retries**.
+- Non-2xx responses return `*jev.APIError` with `StatusCode`, `Body`, `Headers`, `RequestID`, and best-effort `ErrorType` from `detail.error_type`. Use `errors.As` to inspect the error; `ErrorType == "max_tokens_exceeded"` identifies a server context-limit rejection. Its error string omits the body, which may echo submitted content. Retry headers are accessible to callers. Retries are **disabled by default**; opt in with `Retry: jev.DefaultRetryPolicy()`.
 - Malformed responses, missing answers and mismatched answer types return errors. Further request constraints are validated by the service.
 - Reuse clients concurrently, but do not mutate shared requests or HTTP client configuration during calls.
+
+Optional configuration adds `DefaultModel`, `Headers`, `Timeout`, and `Retry`.
+Use `WithHeaders`, `WithTimeout`, and `WithRetry` on either endpoint for one-call
+overrides. Header maps and retry status slices are snapshotted; authentication,
+JSON protocol, SDK identity, and retry count remain protected. Retry overrides
+replace the complete policy; `WithRetry(jev.RetryPolicy{})` disables retries.
+Per-attempt timeouts include response bodies; a context deadline bounds the whole
+call. Timeout overrides leave a supplied HTTP client unchanged.
+
+`DefaultRetryPolicy()` enables two retries with 500ms exponential backoff capped
+at 5s, 25% jitter, HTTP 408/429/5xx, connection errors and attempt timeouts. It honors
+`retry-after-ms` before `Retry-After` (seconds or HTTP date), falling back to backoff
+for hints over 60s. All settings can be changed on the returned policy. A zero
+`MaxRetryAfter` removes that ceiling. Caller cancellation always stops retries.
+Replaying an evaluation can result in additional billable service work.
+
+`ConfigFromEnv(os.Getenv)` explicitly loads `TYPESAFE_API_KEY`, `TYPESAFE_BASE_URL`,
+`TYPESAFE_DEFAULT_MODEL`, and `TYPESAFE_LOG_LEVEL`. Blank values are ignored; edit
+the returned config to override them. Tests can supply a lookup function instead.
+`NewClient` itself never reads the environment.
+
+Logging requires an injected `*slog.Logger`. `LogLevel` selects `debug`, `info`,
+`warn` (default), `error`, or `off`; the logger's handler also filters messages.
+Credential headers are redacted. Bodies are omitted unless `LogBodies` is true
+and debug logging is enabled; body contents may contain sensitive application data.
 
 Consumers can define interfaces containing only the methods they need. The module does not impose an application interface or DI framework.
 
@@ -187,7 +212,7 @@ verification workflow. Task records live in `plans/active`.
 | Missing or invalid API key | Supply `Config.APIKey`; for triage, set `TYPESAFE_API_KEY`. The module does not read environment variables. |
 | `RequestSizeError` | Inspect `Size` and `Limit` with `errors.As`; reduce the complete request or deliberately adjust `MaxRequestBytes`. |
 | `max_tokens_exceeded` | Reduce state or question content. In triage, lower `--context-bytes`. Byte budgets are not token counts. |
-| HTTP 401, 429, or another service error | Inspect `APIError.StatusCode`, `Headers`, and `RequestID`; the client does not retry automatically. Treat raw `Body` as potentially sensitive. |
+| HTTP 401, 429, or another service error | Inspect `APIError.StatusCode`, `Headers`, and `RequestID`; retries require an explicit policy. Treat raw `Body` as potentially sensitive. |
 | Timeout or cancellation | Check the caller's context and HTTP client timeout. Wrapped errors retain their causes for `errors.Is`. |
 | Truncated triage report | The verdict applies only to `evaluated_bytes`; remaining input was consumed but not evaluated. |
 | Vulnerability check fails | Check the Go toolchain patch as well as module dependencies. Re-run with a patched supported toolchain; do not suppress the finding. |
