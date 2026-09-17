@@ -48,4 +48,14 @@ observed failing before the fix. New examples are executed by go test.
 Both GOTOOLCHAIN=go1.26.8 make check and GOTOOLCHAIN=go1.27.1 make check passed,
 including race tests, executable examples, build, formatting, zero linter findings,
 workflow and Markdown validation, no reachable vulnerabilities and module tidiness.
-The module still has no runtime dependencies. Hosted CI verification remains next.
+The module still has no runtime dependencies. Hosted CI verification is recorded below.
+
+## Completion evidence
+
+Implementation commit 522fc7f passed every hosted job in
+[CI run 35265782275](https://github.com/withzombies/jev-go/actions/runs/35265782275):
+Go 1.26.x (10s), Go stable (44s), and Quality (28s). No hosted fixes were needed.
+The ignored local triage executable was rebuilt and its --help smoke test passed.
+The capability matrix in SDK_PARITY.md records all applicable audited capabilities
+and intentional Go equivalents. No live service calls or credentials were used for
+parity verification. No runtime dependencies or compatibility shims were added.
