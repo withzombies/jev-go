@@ -29,9 +29,10 @@ func command(ctx context.Context, args []string, in io.ReadCloser, out, stderr i
 	flags := flag.NewFlagSet("triage", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	flags.StringVar(&opts.model, "model", jev.DefaultModel, "Jev model name or alias")
+	flags.Int64Var(&opts.contextBytes, "context-bytes", defaultContextBytes, "maximum stdin prefix bytes to evaluate (not a token count)")
 	flags.BoolVar(&opts.jsonOutput, "json", false, "print a JSON report")
 	flags.Usage = func() {
-		fmt.Fprintln(stderr, "Usage: gh pr diff 8556 | triage [--model MODEL] [--json]")
+		fmt.Fprintln(stderr, "Usage: gh pr diff 8556 | triage [--model MODEL] [--json] [--context-bytes N]")
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(args); err != nil {
@@ -42,6 +43,10 @@ func command(ctx context.Context, args []string, in io.ReadCloser, out, stderr i
 	}
 	if flags.NArg() != 0 {
 		fmt.Fprintln(stderr, "triage: provide the diff on stdin, not as an argument")
+		return 1
+	}
+	if opts.contextBytes <= 0 {
+		fmt.Fprintln(stderr, "triage: --context-bytes must be positive")
 		return 1
 	}
 	client, err := jev.NewClient(jev.Config{APIKey: getenv("TYPESAFE_AI_API_KEY")})

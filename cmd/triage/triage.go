@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
 	"strings"
+	"unicode/utf8"
 
 	jev "github.com/withzombies/jev-go"
 )
@@ -16,9 +18,12 @@ type evaluator interface {
 	SystemOne(context.Context, jev.Request) (*jev.Response, error)
 }
 
+const defaultContextBytes int64 = 24 * 1024
+
 type options struct {
-	model      string
-	jsonOutput bool
+	contextBytes int64
+	model        string
+	jsonOutput   bool
 }
 
 type questionResult struct {
@@ -28,18 +33,43 @@ type questionResult struct {
 }
 
 type report struct {
-	Verdict   string           `json:"verdict"`
-	Reasons   []string         `json:"reasons"`
-	Model     string           `json:"model"`
-	Usage     jev.Usage        `json:"usage"`
-	RequestID string           `json:"request_id,omitempty"`
-	Results   []questionResult `json:"results"`
+	InputBytes     int64            `json:"input_bytes"`
+	EvaluatedBytes int              `json:"evaluated_bytes"`
+	Truncated      bool             `json:"truncated"`
+	Verdict        string           `json:"verdict"`
+	Reasons        []string         `json:"reasons"`
+	Model          string           `json:"model"`
+	Usage          jev.Usage        `json:"usage"`
+	RequestID      string           `json:"request_id,omitempty"`
+	Results        []questionResult `json:"results"`
 }
 
 func run(ctx context.Context, eval evaluator, in io.Reader, out io.Writer, opts options) error {
-	patch, err := io.ReadAll(in)
+	limit := opts.contextBytes
+	if limit == 0 {
+		limit = defaultContextBytes
+	}
+	if limit < 0 {
+		return fmt.Errorf("context-bytes must be positive")
+	}
+	patch, err := io.ReadAll(io.LimitReader(in, limit))
 	if err != nil {
 		return fmt.Errorf("read stdin: %w", err)
+	}
+	// Consume the rest without retaining it, allowing pipeline producers to finish.
+	remaining, err := io.Copy(io.Discard, in)
+	if err != nil {
+		return fmt.Errorf("read stdin: %w", err)
+	}
+	inputBytes := int64(len(patch)) + remaining
+	if remaining > 0 && len(patch) > 0 {
+		start := len(patch) - 1
+		for start > 0 && !utf8.RuneStart(patch[start]) {
+			start--
+		}
+		if !utf8.FullRune(patch[start:]) {
+			patch = patch[:start]
+		}
 	}
 	if strings.TrimSpace(string(patch)) == "" {
 		return fmt.Errorf("stdin is empty; pipe a PR diff or patch into triage")
@@ -51,6 +81,10 @@ func run(ctx context.Context, eval evaluator, in io.Reader, out io.Writer, opts 
 	}
 	response, err := eval.SystemOne(ctx, request)
 	if err != nil {
+		var apiErr *jev.APIError
+		if errors.As(err, &apiErr) && apiErr.ErrorType == "max_tokens_exceeded" {
+			return fmt.Errorf("evaluate patch: reduce --context-bytes to leave room for the questions: %w", err)
+		}
 		return fmt.Errorf("evaluate patch: %w", err)
 	}
 	if response == nil {
@@ -60,7 +94,7 @@ func run(ctx context.Context, eval evaluator, in io.Reader, out io.Writer, opts 
 	if err != nil {
 		return err
 	}
-	result := report{Verdict: verdict, Reasons: reasons, Model: response.Model, Usage: response.Usage, RequestID: response.RequestID}
+	result := report{InputBytes: inputBytes, EvaluatedBytes: len(patch), Truncated: int64(len(patch)) < inputBytes, Verdict: verdict, Reasons: reasons, Model: response.Model, Usage: response.Usage, RequestID: response.RequestID}
 	for _, q := range questions {
 		answer, ok := response.Answers[q.ID]
 		if !ok || answer == nil {
@@ -76,6 +110,10 @@ func run(ctx context.Context, eval evaluator, in io.Reader, out io.Writer, opts 
 	}
 	var text strings.Builder
 	fmt.Fprintf(&text, "Verdict: %s\n", result.Verdict)
+	if result.Truncated {
+		fmt.Fprintln(&text, "Scope: input prefix only; remaining input was not evaluated.")
+	}
+	fmt.Fprintf(&text, "Evaluated: %d of %d bytes\n", result.EvaluatedBytes, result.InputBytes)
 	for _, reason := range result.Reasons {
 		fmt.Fprintf(&text, "- %s\n", reason)
 	}

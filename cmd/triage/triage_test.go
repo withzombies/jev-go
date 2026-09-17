@@ -341,3 +341,131 @@ func TestCommandCancellationUnblocksInput(t *testing.T) {
 		t.Fatal("command remained blocked on stdin after cancellation")
 	}
 }
+
+func TestRunInputPrefix(t *testing.T) {
+	for _, tc := range []struct {
+		name, input, prefix string
+		limit               int64
+	}{
+		{"short", "patch", "patch", 10},
+		{"exact", "patch", "patch", 5},
+		{"long", "patch remainder", "patch", 5},
+		{"unicode split", "a☃z", "a", 3},
+		{"unicode exact", "a☃z", "a☃", 4},
+		{"default", strings.Repeat("x", 24577), strings.Repeat("x", 24576), 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, asJSON := range []bool{false, true} {
+				input := strings.NewReader(tc.input)
+				calls := 0
+				evaluate := evaluatorFunc(func(_ context.Context, r jev.Request) (*jev.Response, error) {
+					calls++
+					if r.State != tc.prefix {
+						t.Errorf("state differs from expected prefix")
+					}
+					if input.Len() != 0 {
+						t.Error("stdin not drained before evaluation")
+					}
+					return &jev.Response{Model: "test", Answers: answersFor(reviewQuestions())}, nil
+				})
+				var out bytes.Buffer
+				if err := run(context.Background(), evaluate, input, &out, options{contextBytes: tc.limit, jsonOutput: asJSON}); err != nil {
+					t.Fatal(err)
+				}
+				if calls != 1 {
+					t.Fatalf("evaluation calls: %d", calls)
+				}
+				truncated := len(tc.prefix) < len(tc.input)
+				if asJSON {
+					var got struct {
+						Verdict        string `json:"verdict"`
+						InputBytes     int64  `json:"input_bytes"`
+						EvaluatedBytes int    `json:"evaluated_bytes"`
+						Truncated      bool   `json:"truncated"`
+					}
+					if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+						t.Fatal(err)
+					}
+					if got.Verdict != "approve" || got.InputBytes != int64(len(tc.input)) || got.EvaluatedBytes != len(tc.prefix) || got.Truncated != truncated {
+						t.Fatalf("report: %s", out.String())
+					}
+				} else {
+					if !strings.Contains(out.String(), fmt.Sprintf("%d of %d bytes", len(tc.prefix), len(tc.input))) {
+						t.Fatalf("missing byte counts: %s", out.String())
+					}
+					if truncated && !strings.Contains(out.String(), "input prefix only") {
+						t.Fatalf("missing partial scope: %s", out.String())
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestRunDrainFailureDoesNotEvaluate(t *testing.T) {
+	want := errors.New("drain failed")
+	input := io.MultiReader(strings.NewReader("patch"), failingReader{want})
+	eval := evaluatorFunc(func(context.Context, jev.Request) (*jev.Response, error) {
+		t.Error("unexpected evaluation")
+		return nil, nil
+	})
+	if err := run(context.Background(), eval, input, io.Discard, options{contextBytes: 5}); !errors.Is(err, want) {
+		t.Fatalf("lost drain error: %v", err)
+	}
+}
+
+func TestCommandContextBytes(t *testing.T) {
+	for _, value := range []string{"0", "-1", "invalid"} {
+		var stderr bytes.Buffer
+		code := command(context.Background(), []string{"--context-bytes", value}, io.NopCloser(strings.NewReader("patch")), io.Discard, &stderr, func(string) string { return "test" })
+		if code != 1 || !strings.Contains(stderr.String(), "context-bytes") {
+			t.Fatalf("code=%d error=%s", code, stderr.String())
+		}
+	}
+	var stderr bytes.Buffer
+	command(context.Background(), []string{"--help"}, io.NopCloser(strings.NewReader("")), io.Discard, &stderr, func(string) string { return "" })
+	if !strings.Contains(stderr.String(), "context-bytes") || !strings.Contains(stderr.String(), "24576") {
+		t.Fatalf("help: %s", stderr.String())
+	}
+}
+
+func TestCommandCancellationUnblocksDrain(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	input, writer := io.Pipe()
+	defer input.Close()
+	defer writer.Close()
+	done := make(chan int, 1)
+	var stderr bytes.Buffer
+	go func() {
+		done <- command(ctx, []string{"--context-bytes", "1"}, input, io.Discard, &stderr, func(string) string { return "test" })
+	}()
+	written := make(chan error, 1)
+	go func() { _, err := io.WriteString(writer, "xy"); written <- err }()
+	select {
+	case err := <-written:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("input not consumed")
+	}
+	cancel()
+	select {
+	case code := <-done:
+		if code != 1 || !strings.Contains(stderr.String(), "read stdin") {
+			t.Fatalf("code=%d stderr=%s", code, stderr.String())
+		}
+	case <-time.After(time.Second):
+		t.Fatal("blocked draining after cancellation")
+	}
+}
+
+func TestRunContextLimitGuidance(t *testing.T) {
+	want := &jev.APIError{StatusCode: 400, ErrorType: "max_tokens_exceeded", RequestID: "req-limit"}
+	eval := evaluatorFunc(func(context.Context, jev.Request) (*jev.Response, error) { return nil, want })
+	err := run(context.Background(), eval, strings.NewReader("patch"), io.Discard, options{})
+	if !errors.Is(err, want) || !strings.Contains(err.Error(), "--context-bytes") {
+		t.Fatalf("error: %v", err)
+	}
+}
