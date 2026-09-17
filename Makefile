@@ -9,17 +9,19 @@ GOLANGCI_VERSION := v2.13.2
 ACTIONLINT_VERSION := v1.7.12
 GOVULNCHECK_VERSION := v1.8.0
 MARKDOWNLINT_VERSION := 0.23.2
+GOMARKDOC_VERSION := v1.1.0
 
 TOOL_DIR := $(CURDIR)/.bin
 GOLANGCI := $(TOOL_DIR)/golangci-lint/$(GOLANGCI_VERSION)/golangci-lint
 ACTIONLINT := $(TOOL_DIR)/actionlint/$(ACTIONLINT_VERSION)/$(GO_VERSION)/actionlint
+GOMARKDOC := $(TOOL_DIR)/gomarkdoc/$(GOMARKDOC_VERSION)/$(GO_VERSION)/gomarkdoc
 GOVULNCHECK := $(TOOL_DIR)/govulncheck/$(GOVULNCHECK_VERSION)/$(GO_VERSION)/govulncheck
 
-.PHONY: check tools fmt fmt-check test build lint workflow-lint docs-lint vuln tidy-check
+.PHONY: docs check tools fmt fmt-check test build lint workflow-lint docs-check docs-lint vuln tidy-check
 
-check: fmt-check test build lint workflow-lint docs-lint vuln tidy-check
+check: fmt-check test build lint workflow-lint docs-check docs-lint vuln tidy-check
 
-tools: $(GOLANGCI) $(ACTIONLINT) $(GOVULNCHECK)
+tools: $(GOLANGCI) $(ACTIONLINT) $(GOVULNCHECK) $(GOMARKDOC)
 
 $(GOLANGCI):
 	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/$(GOLANGCI_VERSION)/install.sh | sh -s -- -b "$(dir $(GOLANGCI))" $(GOLANGCI_VERSION)
@@ -29,6 +31,9 @@ $(ACTIONLINT):
 
 $(GOVULNCHECK):
 	GOBIN="$(dir $(GOVULNCHECK))" $(GO) install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
+
+$(GOMARKDOC):
+	GOBIN="$(dir $(GOMARKDOC))" $(GO) install github.com/princjef/gomarkdoc/cmd/gomarkdoc@$(GOMARKDOC_VERSION)
 
 fmt: $(GOLANGCI)
 	"$(GOLANGCI)" fmt
@@ -49,6 +54,12 @@ lint: $(GOLANGCI)
 
 workflow-lint: $(ACTIONLINT)
 	"$(ACTIONLINT)"
+
+docs: $(GOMARKDOC)
+	"$(GOMARKDOC)" --config .gomarkdoc.yml .
+
+docs-check: $(GOMARKDOC)
+	"$(GOMARKDOC)" --config .gomarkdoc.yml --check .
 
 docs-lint:
 	npx --yes markdownlint-cli2@$(MARKDOWNLINT_VERSION)

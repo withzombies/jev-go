@@ -60,7 +60,7 @@ type Config struct {
 
 // Client can be reused concurrently. Callers must not mutate requests or the
 // supplied HTTP client while calls are in progress. Retries require an explicit policy.
-// The zero value is not usable; construct a Client with NewClient.
+// The zero value is not usable; construct a Client with [NewClient].
 type Client struct {
 	apiKey          string
 	baseURL         string
@@ -75,9 +75,9 @@ type Client struct {
 	retry           RetryPolicy
 }
 
-// NewClient validates configuration and supplies defaults for an omitted BaseURL
-// and HTTPClient. It performs no network requests. An empty API key, invalid
-// base URL, or negative byte limit returns an error.
+// NewClient validates [Config] and supplies defaults for omitted settings.
+// It performs no network requests. Invalid credentials, URLs, log levels,
+// timeouts, byte limits, or retry policies return an error.
 func NewClient(cfg Config) (*Client, error) {
 	if err := cfg.Retry.validate(); err != nil {
 		return nil, err

@@ -1,0 +1,22 @@
+# Generate only the public library package; the CLI has its own guide.
+output: docs/api.md
+format: github
+repository:
+  url: https://github.com/withzombies/jev-go
+  defaultBranch: main
+  path: /
+header: |
+  <!-- Generated-file formatting exceptions only:
+  MD001: gomarkdoc nests Go comment headings below declaration headings.
+  MD010: executable Go examples retain gofmt tabs inside code blocks.
+  MD012/MD022: gomarkdoc controls blank lines around anchors and examples.
+  MD024: examples repeat Output headings in separate symbol sections.
+  MD033: anchors and expandable examples use GitHub-supported HTML.
+  MD040: example output is emitted as an unlabelled literal code block.
+  -->
+  <!-- markdownlint-configure-file {"MD001": false, "MD010": {"code_blocks": false}, "MD012": false, "MD022": false, "MD024": {"siblings_only": true}, "MD033": {"allowed_elements": ["a", "details", "summary", "p"]}, "MD040": false} -->
+
+footer: |
+  [Home](../README.md) · [Library guide](guide.md) · [Triage](triage.md) · [Development](development.md)
+
+  Generated from Go doc comments and tested examples. Edit the Go source, then run `make docs`.

@@ -67,6 +67,16 @@ relevant. Keep the package overview, README, executable examples, and CLI help
 consistent with the code. Examples should compile and run under `go test`.
 Update documentation in the same change as the behavior it describes.
 
+Keep project documentation in repository Markdown on GitHub. The README is the
+library landing page; docs/guide.md, docs/triage.md, and docs/development.md hold
+focused guides. Standard Go doc comments and executable examples are authoritative
+for docs/api.md. Use Go `[Symbol]` links. Run `make docs` after changing comments,
+examples, or source line positions; never hand-edit the generated reference.
+Commit source and generated documentation together. `make docs-check` detects
+stale output without rewriting files. The pinned generator is a development tool,
+not a runtime dependency. Its named formatting exceptions apply only to its
+output; keep normal Markdown checks strict for handwritten docs.
+
 Use Apache-2.0 for this repository and preserve the canonical LICENSE text.
 Do not add contributor policy documents unless explicitly requested.
 
@@ -84,10 +94,12 @@ make test           # Race tests, executable examples, and coverage report.
 make build          # Compile all packages.
 make lint           # Validate configuration and run all selected Go linters.
 make workflow-lint  # Validate GitHub Actions workflows.
+make docs           # Regenerate the GitHub API reference; this edits docs/api.md.
+make docs-check     # Verify the generated reference without rewriting files.
 make docs-lint      # Validate Markdown; downloads the pinned CLI via npx.
 make vuln           # Scan reachable vulnerabilities using the Go database.
 make tidy-check     # Check module tidiness without editing module files.
-make check          # All verification targets above except tools and fmt.
+make check          # All verification targets above except tools, fmt, and docs.
 ```
 
 Tool installation and vulnerability database access require network access; the

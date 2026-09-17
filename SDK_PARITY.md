@@ -1,5 +1,7 @@
 # SDK feature parity
 
+[Home](README.md) · [Library guide](docs/guide.md) · [API reference](docs/api.md)
+
 The reusable Go module covers the applicable public capabilities of both official
 SDKs at these audited versions:
 

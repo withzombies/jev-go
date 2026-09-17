@@ -12,6 +12,7 @@ import (
 	jev "github.com/withzombies/jev-go"
 )
 
+// Evaluate a question using an injected HTTP client and a caller-owned deadline.
 func ExampleClient_SystemOne() {
 	// A local server keeps this executable example independent of credentials.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -24,7 +25,9 @@ func ExampleClient_SystemOne() {
 	if err != nil {
 		panic(err)
 	}
-	response, err := client.SystemOne(context.Background(), jev.Request{
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	response, err := client.SystemOne(ctx, jev.Request{
 		State: "I was charged twice.",
 		Questions: map[string]jev.Question{
 			"billing": jev.Noul{Instructions: "Is this message about billing?"},
@@ -33,7 +36,7 @@ func ExampleClient_SystemOne() {
 	if err != nil {
 		panic(err)
 	}
-	answer := response.Answers["billing"].(jev.NoulAnswer)
+	answer := response.Nouls()["billing"]
 	fmt.Printf("Probability of billing: %.2f\n", answer.Noul)
 	// Output: Probability of billing: 0.98
 }

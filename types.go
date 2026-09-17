@@ -8,8 +8,9 @@ import (
 	"net/http"
 )
 
-// Question is one of Noul, Choice, Score, or RawQuestion. Instructions and descriptions may
-// contain text, JSON objects, or arrays. See the API for supported content.
+// Question is one of [Noul], [Choice], [Score], or [RawQuestion]. Instructions
+// and descriptions may contain text, JSON objects, or arrays. See the API for
+// supported content.
 type Question interface {
 	json.Marshaler
 	questionType() string
@@ -92,7 +93,8 @@ type Request struct {
 	Model string `json:"model"`
 }
 
-// Answer is a NoulAnswer, ChoiceAnswer, ScoreAnswer or RawAnswer, decoded by its wire type.
+// Answer is a [NoulAnswer], [ChoiceAnswer], [ScoreAnswer], or [RawAnswer],
+// decoded by its wire type.
 type Answer interface {
 	json.Marshaler
 	answerType() string

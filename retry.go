@@ -11,7 +11,7 @@ import (
 )
 
 // RetryPolicy controls retries after a failed HTTP attempt. Its zero value makes
-// one attempt. Policies are copied by NewClient and WithRetry, including statuses.
+// one attempt. Policies are copied by [NewClient] and [WithRetry], including statuses.
 // AdditionalRetry must be safe for concurrent calls if the client is shared.
 type RetryPolicy struct {
 	// MaxRetries is the maximum number of attempts after the initial attempt.
@@ -52,7 +52,7 @@ func DefaultRetryPolicy() RetryPolicy {
 }
 
 // WithRetry replaces the client's policy for one call with a snapshot of policy.
-// Pass RetryPolicy{} to disable retries, or edit a DefaultRetryPolicy copy to
+// Pass RetryPolicy{} to disable retries, or edit a [DefaultRetryPolicy] copy to
 // override individual SDK defaults without ambiguous zero values.
 func WithRetry(policy RetryPolicy) RequestOption {
 	snapshot := policy.clone()

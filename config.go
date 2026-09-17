@@ -11,7 +11,9 @@ import (
 // typically os.Getenv. It never accesses the process environment itself. Blank
 // values are ignored. It reads TYPESAFE_API_KEY, TYPESAFE_BASE_URL,
 // TYPESAFE_DEFAULT_MODEL and TYPESAFE_LOG_LEVEL. The caller may override fields
-// before NewClient; no logger is created and retries remain disabled.
+// before [NewClient]; no logger is created and retries remain disabled.
+// A nil lookup function or an invalid log level returns an error. Remaining
+// configuration is validated by NewClient.
 func ConfigFromEnv(getenv func(string) string) (Config, error) {
 	if getenv == nil {
 		return Config{}, fmt.Errorf("jev: environment lookup is nil")
