@@ -13,22 +13,32 @@ import (
 )
 
 const (
+	// DefaultBaseURL is the public TypeSafe API endpoint.
 	DefaultBaseURL = "https://api.typesafe.ai"
-	DefaultModel   = "jev-latest"
+	// DefaultModel follows TypeSafe's current stable Jev alias.
+	DefaultModel = "jev-latest"
 )
 
 // Config explicitly configures a client; the library does not read environment
 // variables. HTTPClient remains caller-owned and is never modified or closed.
 type Config struct {
-	APIKey     string
-	BaseURL    string
+	// APIKey is the required bearer credential. Surrounding whitespace is trimmed.
+	APIKey string
+	// BaseURL defaults to DefaultBaseURL. It must be an absolute HTTP(S) URL
+	// without credentials, query parameters, or a fragment.
+	BaseURL string
+	// HTTPClient supplies the transport and timeout. Nil uses a new client with
+	// a ten-second timeout. A supplied client is never modified or closed.
 	HTTPClient *http.Client
-	// MaxRequestBytes caps the complete encoded request. Zero disables the cap.
+	// MaxRequestBytes caps the complete encoded request, including JSON escaping,
+	// questions, and model. Zero disables the cap; negative values are invalid.
+	// This byte count is not a token count or a guarantee of server acceptance.
 	MaxRequestBytes int
 }
 
 // Client can be reused concurrently. Callers must not mutate requests or the
 // supplied HTTP client while calls are in progress. Requests are not retried.
+// The zero value is not usable; construct a Client with NewClient.
 type Client struct {
 	apiKey          string
 	baseURL         string
@@ -36,7 +46,9 @@ type Client struct {
 	maxRequestBytes int
 }
 
-// NewClient supplies defaults for an omitted BaseURL and HTTPClient.
+// NewClient validates configuration and supplies defaults for an omitted BaseURL
+// and HTTPClient. It performs no network requests. An empty API key, invalid
+// base URL, or negative byte limit returns an error.
 func NewClient(cfg Config) (*Client, error) {
 	if cfg.MaxRequestBytes < 0 {
 		return nil, fmt.Errorf("jev: MaxRequestBytes must not be negative")
@@ -61,6 +73,12 @@ func NewClient(cfg Config) (*Client, error) {
 }
 
 // SystemOne answers each question independently against the same state.
+// It sends one request and does not modify or truncate the supplied request.
+// At least one non-nil question is required. A locally oversized request returns
+// a *RequestSizeError before HTTP; a non-2xx response returns an *APIError.
+// Transport errors preserve their causes, including context cancellation.
+// Malformed responses, missing answers, and mismatched answer types are errors.
+// Other model-specific input constraints are enforced by the service.
 func (c *Client) SystemOne(ctx context.Context, request Request) (*Response, error) {
 	if len(request.Questions) == 0 {
 		return nil, fmt.Errorf("jev: at least one question is required")
@@ -106,6 +124,8 @@ func (c *Client) SystemOne(ctx context.Context, request Request) (*Response, err
 }
 
 // ListModels lists models and aliases available to the authenticated account.
+// It sends one request, respects ctx, and returns *APIError for non-2xx responses.
+// Transport errors preserve their causes; malformed responses return errors.
 func (c *Client) ListModels(ctx context.Context) ([]Model, error) {
 	data, _, err := c.do(ctx, http.MethodGet, "/v1/models", nil)
 	if err != nil {
@@ -137,7 +157,10 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte) ([]by
 	if err != nil {
 		return nil, nil, fmt.Errorf("jev: %s %s: %w", method, path, err)
 	}
-	defer response.Body.Close()
+	defer func() {
+		// Reading determines success; closing only releases transport resources.
+		_ = response.Body.Close()
+	}()
 	data, err := io.ReadAll(response.Body)
 	if err != nil {
 		return nil, nil, fmt.Errorf("jev: read response: %w", err)

@@ -4,11 +4,11 @@ Initial workspace empty, no Git repository. Go 1.26.4 and gh available. TYPESAFE
 
 ## Research (2026-09-17)
 
-- Official Python SDK: https://github.com/typesafe-ai/typesafe-sdk-python/tree/420ef4ffb612d5a539a1e0f0fe883ff6770340af/src/typesafe_sdk/_core — studied synchronous client, questions, response decoding, errors, config and transport.
-- Official JS SDK: https://github.com/typesafe-ai/typesafe-sdk-js/tree/66880ccded6cb642dc1809620c2b108c33730214/src — studied client, questions, types, model listing.
-- Third implementation: https://github.com/vercel/ai/blob/main/packages/gateway/src/gateway-evaluation-model.ts — read evaluation adapter; its gateway protocol differs from the direct API.
-- Direct API: https://docs.typesafe.ai/api and https://api.typesafe.ai/openapi.json
-- Context/limitations: https://docs.typesafe.ai/model-jaggedness/jev-1.13.md
+- Official Python SDK: <https://github.com/typesafe-ai/typesafe-sdk-python/tree/420ef4ffb612d5a539a1e0f0fe883ff6770340af/src/typesafe_sdk/_core> — studied synchronous client, questions, response decoding, errors, config and transport.
+- Official JS SDK: <https://github.com/typesafe-ai/typesafe-sdk-js/tree/66880ccded6cb642dc1809620c2b108c33730214/src> — studied client, questions, types, model listing.
+- Third implementation: <https://github.com/vercel/ai/blob/main/packages/gateway/src/gateway-evaluation-model.ts> — read evaluation adapter; its gateway protocol differs from the direct API.
+- Direct API: <https://docs.typesafe.ai/api> and <https://api.typesafe.ai/openapi.json>
+- Context/limitations: <https://docs.typesafe.ai/model-jaggedness/jev-1.13.md>
 
 Live GET /v1/models and synthetic POST /v1/systemone succeeded during planning. Model resolved to jev-1.13.0. Noul has only a probability; Score can be fractional. Usage has input_tokens and output_tokens, not billing_units. Current OpenAPI permits one score criterion, while prose suggests at least two; avoid duplicating server limits.
 

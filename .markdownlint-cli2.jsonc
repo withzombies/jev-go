@@ -1,0 +1,9 @@
+{
+  "config": {
+    "default": true,
+    // Let prose wrap naturally; long links and Go examples remain readable.
+    "MD013": false
+  },
+  "globs": ["**/*.md"],
+  "ignores": [".bin/**", "node_modules/**"]
+}

@@ -319,8 +319,16 @@ func TestCommandCancellationUnblocksInput(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	input, writer := io.Pipe()
-	defer input.Close()
-	defer writer.Close()
+	defer func() {
+		if err := input.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
+	defer func() {
+		if err := writer.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
 	var out, stderr bytes.Buffer
 	started := make(chan struct{})
 	done := make(chan int, 1)
@@ -433,8 +441,16 @@ func TestCommandCancellationUnblocksDrain(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	input, writer := io.Pipe()
-	defer input.Close()
-	defer writer.Close()
+	defer func() {
+		if err := input.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
+	defer func() {
+		if err := writer.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
 	done := make(chan int, 1)
 	var stderr bytes.Buffer
 	go func() {

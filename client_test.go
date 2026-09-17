@@ -51,7 +51,7 @@ func TestSystemOneWireRequest(t *testing.T) {
 				}
 				requests <- body
 				w.Header().Set("x-typesafe-request-id", "req-test")
-				fmt.Fprint(w, oneResponse)
+				writeResponse(t, w, oneResponse)
 			})
 			req := oneRequest()
 			req.State = map[string]any{"diff": "patch"}
@@ -87,7 +87,7 @@ func TestListModels(t *testing.T) {
 		if r.Method != "GET" || r.URL.Path != "/v1/models" || r.Header.Get("Authorization") != "Bearer test-key" {
 			t.Error("incorrect model request")
 		}
-		fmt.Fprint(w, `{"models":[{"name":"jev-latest","description":"stable","release_date":"2026-09-10T00:00:00Z"}]}`)
+		writeResponse(t, w, `{"models":[{"name":"jev-latest","description":"stable","release_date":"2026-09-10T00:00:00Z"}]}`)
 	})
 	models, err := c.ListModels(context.Background())
 	if err != nil {
@@ -102,7 +102,8 @@ func TestClientConfigValidation(t *testing.T) {
 	for _, cfg := range []jev.Config{
 		{}, {APIKey: "  "}, {APIKey: "bad\nkey"},
 		{APIKey: "key", BaseURL: "relative"}, {APIKey: "key", BaseURL: "ftp://example.com"},
-		{APIKey: "key", BaseURL: "https://user:pass@example.com"}, {APIKey: "key", BaseURL: "https://example.com?x=1"},
+		{APIKey: "key", BaseURL: "https://user:pass@example.com"}, //nolint:gosec // Dummy credentials exercise URL rejection.
+		{APIKey: "key", BaseURL: "https://example.com?x=1"},
 		{APIKey: "key", BaseURL: "https://example.com#fragment"},
 	} {
 		if _, err := jev.NewClient(cfg); err == nil {
@@ -112,7 +113,7 @@ func TestClientConfigValidation(t *testing.T) {
 }
 
 func TestSystemOneRejectsInvalidRequestsBeforeHTTP(t *testing.T) {
-	c := clientFor(t, func(w http.ResponseWriter, r *http.Request) { t.Error("invalid request reached server") })
+	c := clientFor(t, func(_ http.ResponseWriter, _ *http.Request) { t.Error("invalid request reached server") })
 	var nilQuestion *jev.Noul
 	requests := []jev.Request{
 		{State: "x"}, {State: "x", Questions: map[string]jev.Question{"bad": nil}},
@@ -133,7 +134,7 @@ func TestSystemOneRejectsMissingOrWrongAnswers(t *testing.T) {
 		`{"model":"jev","usage":{"input_tokens":1,"output_tokens":1},"answers":{"ok":{"type":"choice","choice":"x","confidence":1,"probabilities":{"x":1}}}}`,
 		`not JSON`, oneResponse + `{}`, `null`,
 	} {
-		c := clientFor(t, func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, body) })
+		c := clientFor(t, func(w http.ResponseWriter, _ *http.Request) { writeResponse(t, w, body) })
 		if _, err := c.SystemOne(context.Background(), oneRequest()); err == nil {
 			t.Errorf("accepted %s", body)
 		}
@@ -142,7 +143,7 @@ func TestSystemOneRejectsMissingOrWrongAnswers(t *testing.T) {
 
 func TestListModelsRejectsMalformedResponse(t *testing.T) {
 	for _, body := range []string{`{}`, `{"models":null}`, `{"models":"bad"}`, `garbage`} {
-		c := clientFor(t, func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, body) })
+		c := clientFor(t, func(w http.ResponseWriter, _ *http.Request) { writeResponse(t, w, body) })
 		if _, err := c.ListModels(context.Background()); err == nil {
 			t.Errorf("accepted %s", body)
 		}
@@ -157,12 +158,12 @@ func TestAPIErrorsPreserveMetadataWithoutRetrying(t *testing.T) {
 			if status == 529 {
 				body = "overloaded"
 			}
-			c := clientFor(t, func(w http.ResponseWriter, r *http.Request) {
+			c := clientFor(t, func(w http.ResponseWriter, _ *http.Request) {
 				calls.Add(1)
 				w.Header().Set("Retry-After", "2")
 				w.Header().Set("x-typesafe-request-id", "req-error")
 				w.WriteHeader(status)
-				fmt.Fprint(w, body)
+				writeResponse(t, w, body)
 			})
 			_, err := c.SystemOne(context.Background(), oneRequest())
 			var apiErr *jev.APIError
@@ -255,7 +256,7 @@ func TestCancellationAndHTTPTimeout(t *testing.T) {
 		t.Run(fmt.Sprint(timeout), func(t *testing.T) {
 			started := make(chan struct{})
 			release := make(chan struct{})
-			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { close(started); <-release }))
+			s := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) { close(started); <-release }))
 			defer s.Close()
 			defer close(release)
 			h := s.Client()
@@ -295,7 +296,7 @@ func TestCancellationAndHTTPTimeout(t *testing.T) {
 }
 
 func TestClientConcurrentReuse(t *testing.T) {
-	c := clientFor(t, func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, oneResponse) })
+	c := clientFor(t, func(w http.ResponseWriter, _ *http.Request) { writeResponse(t, w, oneResponse) })
 	req := oneRequest()
 	var wg sync.WaitGroup
 	for range 12 {
@@ -329,7 +330,7 @@ func TestRequestByteLimit(t *testing.T) {
 				if string(body) != string(encoded) {
 					t.Errorf("unexpected wire request: %s", body)
 				}
-				fmt.Fprint(w, oneResponse)
+				writeResponse(t, w, oneResponse)
 			}))
 			defer server.Close()
 			client, err := jev.NewClient(jev.Config{APIKey: "test", BaseURL: server.URL, MaxRequestBytes: limit})
@@ -361,11 +362,11 @@ func TestRequestByteLimit(t *testing.T) {
 func TestAPIErrorType(t *testing.T) {
 	for _, body := range []string{`{"detail":{"error_type":"max_tokens_exceeded"}}`, `{"detail":{"error_type":"other"}}`, `{"detail":{"error_type":7}}`, `not json`, `{}`} {
 		t.Run(body, func(t *testing.T) {
-			client := clientFor(t, func(w http.ResponseWriter, r *http.Request) {
+			client := clientFor(t, func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("x-typesafe-request-id", "req-limit")
 				w.Header().Set("Retry-After", "2")
 				w.WriteHeader(400)
-				fmt.Fprint(w, body)
+				writeResponse(t, w, body)
 			})
 			_, err := client.SystemOne(context.Background(), oneRequest())
 			var apiErr *jev.APIError
@@ -389,5 +390,12 @@ func TestAPIErrorType(t *testing.T) {
 				t.Fatal("error echoed response body")
 			}
 		})
+	}
+}
+
+func writeResponse(t *testing.T, w io.Writer, body string) {
+	t.Helper()
+	if _, err := io.WriteString(w, body); err != nil {
+		t.Errorf("write response: %v", err)
 	}
 }

@@ -1,0 +1,46 @@
+version: "2"
+run:
+  timeout: 5m
+linters:
+  default: none
+  enable:
+    - govet
+    - staticcheck
+    - unused
+    - ineffassign
+    - nilerr
+    - nilnesserr
+    - durationcheck
+    - makezero
+    - unconvert
+    - errcheck
+    - errorlint
+    - errname
+    - bodyclose
+    - noctx
+    - contextcheck
+    - containedctx
+    - gosec
+    - bidichk
+    - revive
+    - misspell
+    - nolintlint
+    - testableexamples
+    - thelper
+    - tparallel
+    - usetesting
+  settings:
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+      allow-unused: false
+  exclusions:
+    # No blanket exemptions for comments, examples, or tests.
+    presets: []
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+formatters:
+  enable:
+    - gofmt
+    - goimports
