@@ -310,3 +310,84 @@ func TestClientConcurrentReuse(t *testing.T) {
 		t.Error("changed shared request")
 	}
 }
+
+func TestRequestByteLimit(t *testing.T) {
+	request := oneRequest()
+	request.State = "<escaped>\n☃"
+	wire := request
+	wire.Model = jev.DefaultModel
+	encoded, err := json.Marshal(wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, limit := range []int{0, len(encoded), len(encoded) - 1} {
+		t.Run(fmt.Sprint(limit), func(t *testing.T) {
+			var calls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				body, _ := io.ReadAll(r.Body)
+				if string(body) != string(encoded) {
+					t.Errorf("unexpected wire request: %s", body)
+				}
+				fmt.Fprint(w, oneResponse)
+			}))
+			defer server.Close()
+			client, err := jev.NewClient(jev.Config{APIKey: "test", BaseURL: server.URL, MaxRequestBytes: limit})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = client.SystemOne(context.Background(), request)
+			if limit > 0 && limit < len(encoded) {
+				var sizeErr *jev.RequestSizeError
+				if !errors.As(err, &sizeErr) || sizeErr.Size != len(encoded) || sizeErr.Limit != limit {
+					t.Fatalf("size error: %v", err)
+				}
+				if calls.Load() != 0 {
+					t.Fatal("oversized request reached transport")
+				}
+			} else if err != nil || calls.Load() != 1 {
+				t.Fatalf("request: calls=%d error=%v", calls.Load(), err)
+			}
+			if request.Model != "" {
+				t.Fatal("request mutated")
+			}
+		})
+	}
+	if _, err := jev.NewClient(jev.Config{APIKey: "test", MaxRequestBytes: -1}); err == nil {
+		t.Fatal("accepted negative limit")
+	}
+}
+
+func TestAPIErrorType(t *testing.T) {
+	for _, body := range []string{`{"detail":{"error_type":"max_tokens_exceeded"}}`, `{"detail":{"error_type":"other"}}`, `{"detail":{"error_type":7}}`, `not json`, `{}`} {
+		t.Run(body, func(t *testing.T) {
+			client := clientFor(t, func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("x-typesafe-request-id", "req-limit")
+				w.Header().Set("Retry-After", "2")
+				w.WriteHeader(400)
+				fmt.Fprint(w, body)
+			})
+			_, err := client.SystemOne(context.Background(), oneRequest())
+			var apiErr *jev.APIError
+			if !errors.As(err, &apiErr) {
+				t.Fatalf("error: %v", err)
+			}
+			want := ""
+			if strings.Contains(body, `"max_tokens_exceeded"`) {
+				want = "max_tokens_exceeded"
+			}
+			if strings.Contains(body, `"other"`) {
+				want = "other"
+			}
+			if apiErr.ErrorType != want || apiErr.StatusCode != 400 || string(apiErr.Body) != body || apiErr.RequestID != "req-limit" || apiErr.Headers.Get("Retry-After") != "2" {
+				t.Fatalf("diagnostics: %+v", apiErr)
+			}
+			if want == "max_tokens_exceeded" && !strings.Contains(err.Error(), "max_tokens_exceeded") {
+				t.Fatalf("unhelpful error: %v", err)
+			}
+			if strings.Contains(err.Error(), body) {
+				t.Fatal("error echoed response body")
+			}
+		})
+	}
+}

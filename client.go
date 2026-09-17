@@ -23,18 +23,24 @@ type Config struct {
 	APIKey     string
 	BaseURL    string
 	HTTPClient *http.Client
+	// MaxRequestBytes caps the complete encoded request. Zero disables the cap.
+	MaxRequestBytes int
 }
 
 // Client can be reused concurrently. Callers must not mutate requests or the
 // supplied HTTP client while calls are in progress. Requests are not retried.
 type Client struct {
-	apiKey     string
-	baseURL    string
-	httpClient *http.Client
+	apiKey          string
+	baseURL         string
+	httpClient      *http.Client
+	maxRequestBytes int
 }
 
 // NewClient supplies defaults for an omitted BaseURL and HTTPClient.
 func NewClient(cfg Config) (*Client, error) {
+	if cfg.MaxRequestBytes < 0 {
+		return nil, fmt.Errorf("jev: MaxRequestBytes must not be negative")
+	}
 	key := strings.TrimSpace(cfg.APIKey)
 	if key == "" || strings.ContainsAny(key, "\r\n") {
 		return nil, fmt.Errorf("jev: a nonempty, single-line API key is required")
@@ -51,7 +57,7 @@ func NewClient(cfg Config) (*Client, error) {
 	if h == nil {
 		h = &http.Client{Timeout: 10 * time.Second}
 	}
-	return &Client{apiKey: key, baseURL: strings.TrimRight(base, "/"), httpClient: h}, nil
+	return &Client{apiKey: key, baseURL: strings.TrimRight(base, "/"), httpClient: h, maxRequestBytes: cfg.MaxRequestBytes}, nil
 }
 
 // SystemOne answers each question independently against the same state.
@@ -74,6 +80,9 @@ func (c *Client) SystemOne(ctx context.Context, request Request) (*Response, err
 	body, err := json.Marshal(request)
 	if err != nil {
 		return nil, fmt.Errorf("jev: encode request: %w", err)
+	}
+	if c.maxRequestBytes > 0 && len(body) > c.maxRequestBytes {
+		return nil, &RequestSizeError{Size: len(body), Limit: c.maxRequestBytes}
 	}
 	data, headers, err := c.do(ctx, http.MethodPost, "/v1/systemone", body)
 	if err != nil {
@@ -134,7 +143,14 @@ func (c *Client) do(ctx context.Context, method, path string, body []byte) ([]by
 		return nil, nil, fmt.Errorf("jev: read response: %w", err)
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, nil, &APIError{StatusCode: response.StatusCode, Body: data, Headers: response.Header.Clone(), RequestID: response.Header.Get("x-typesafe-request-id")}
+		var detail struct {
+			Detail struct {
+				ErrorType string `json:"error_type"`
+			} `json:"detail"`
+		}
+		// Error decoding is best effort; always preserve the HTTP diagnostics.
+		_ = json.Unmarshal(data, &detail)
+		return nil, nil, &APIError{ErrorType: detail.Detail.ErrorType, StatusCode: response.StatusCode, Body: data, Headers: response.Header.Clone(), RequestID: response.Header.Get("x-typesafe-request-id")}
 	}
 	return data, response.Header, nil
 }
