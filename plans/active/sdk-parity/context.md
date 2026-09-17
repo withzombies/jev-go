@@ -31,3 +31,21 @@ First slice: Go 1.26.8 make check passed (race tests, build, formatting, all 26
 linters, workflow and Markdown checks, vulnerability scan, module tidiness).
 Library coverage was 95.1%. Explicit test-only lint annotations explain intentionally
 noncanonical header keys and dummy credentials used to verify redaction.
+
+Second slice: observed RED for missing raw payload/response APIs; added them and
+adapted callers without shims. Existing tests caught typed-nil question marshaling
+and pointer token rendering regressions. Individual question marshaling preserves
+nil safety; CLI prints unknown for unavailable counts (observed failing test first).
+An additional failing test established that custom retry predicates must also see
+response-validation errors; decoding now occurs within the shared attempt loop.
+Full Go 1.26.8 make check passed before the final documentation/examples additions.
+
+Final local review matched the capability matrix to implementation and tests.
+A boundary test exposed float rounding above an int64-duration cap; the retry
+calculation now preserves the integer cap before converting back. The test was
+observed failing before the fix. New examples are executed by go test.
+
+Both GOTOOLCHAIN=go1.26.8 make check and GOTOOLCHAIN=go1.27.1 make check passed,
+including race tests, executable examples, build, formatting, zero linter findings,
+workflow and Markdown validation, no reachable vulnerabilities and module tidiness.
+The module still has no runtime dependencies. Hosted CI verification remains next.

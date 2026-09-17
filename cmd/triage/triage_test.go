@@ -132,7 +132,7 @@ func TestRunPassesStdinAndOptionsToInjectedEvaluator(t *testing.T) {
 		if len(req.Questions) != len(questions) {
 			t.Fatal("questions were not batched")
 		}
-		return &jev.Response{Model: "pinned", Usage: jev.Usage{InputTokens: 10, OutputTokens: 3}, RequestID: "req-example", Answers: answersFor(questions)}, nil
+		return &jev.Response{Model: "pinned", Usage: jev.Usage{InputTokens: new(10), OutputTokens: new(3)}, RequestID: "req-example", Answers: answersFor(questions)}, nil
 	})
 	var out bytes.Buffer
 	if err := run(ctx, evaluate, strings.NewReader(patch), &out, options{model: "pinned", jsonOutput: true}); err != nil {
@@ -152,7 +152,7 @@ func TestRunPassesStdinAndOptionsToInjectedEvaluator(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &wire); err != nil {
 		t.Fatal(err)
 	}
-	if wire.Verdict != "approve" || wire.Model != "pinned" || wire.RequestID != "req-example" || wire.Usage.InputTokens != 10 || len(wire.Results) != len(questions) {
+	if wire.Verdict != "approve" || wire.Model != "pinned" || wire.RequestID != "req-example" || (wire.Usage.InputTokens == nil || *wire.Usage.InputTokens != 10) || len(wire.Results) != len(questions) {
 		t.Fatalf("report: %s", out.String())
 	}
 	if strings.Contains(out.String(), patch) {
@@ -176,7 +176,7 @@ func TestRunRealClientEndToEnd(t *testing.T) {
 			t.Error("incorrect evaluation payload")
 		}
 		w.Header().Set("x-typesafe-request-id", "req-integration")
-		if err := json.NewEncoder(w).Encode(jev.Response{Model: "jev-test", Usage: jev.Usage{InputTokens: 123, OutputTokens: 45}, Answers: answers}); err != nil {
+		if err := json.NewEncoder(w).Encode(jev.Response{Model: "jev-test", Usage: jev.Usage{InputTokens: new(123), OutputTokens: new(45)}, Answers: answers}); err != nil {
 			t.Error(err)
 		}
 	}))
@@ -483,5 +483,18 @@ func TestRunContextLimitGuidance(t *testing.T) {
 	err := run(context.Background(), eval, strings.NewReader("patch"), io.Discard, options{})
 	if !errors.Is(err, want) || !strings.Contains(err.Error(), "--context-bytes") {
 		t.Fatalf("error: %v", err)
+	}
+}
+
+func TestRunDisplaysUnknownUsage(t *testing.T) {
+	evaluator := evaluatorFunc(func(_ context.Context, _ jev.Request) (*jev.Response, error) {
+		return &jev.Response{Model: "test", Answers: answersFor(reviewQuestions())}, nil
+	})
+	var out bytes.Buffer
+	if err := run(t.Context(), evaluator, strings.NewReader("patch"), &out, options{contextBytes: 1024}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Tokens: unknown input, unknown output") {
+		t.Fatal("unavailable token counts not identified")
 	}
 }

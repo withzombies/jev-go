@@ -2,6 +2,7 @@ package jev_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -70,7 +71,7 @@ func ExampleClient_ListModels() {
 	if err != nil {
 		panic(err)
 	}
-	for _, model := range models {
+	for _, model := range models.Models {
 		fmt.Println(model.Name, model.Description)
 	}
 	// Output: jev-example Example model
@@ -120,4 +121,73 @@ func ExampleAPIError() {
 		panic(fmt.Sprintf("expected API rejection, got %v", err))
 	}
 	// Output: 400 max_tokens_exceeded req-example
+}
+
+func ExampleConfigFromEnv() {
+	values := map[string]string{"TYPESAFE_API_KEY": "example-key", "TYPESAFE_DEFAULT_MODEL": "jev-latest"}
+	cfg, err := jev.ConfigFromEnv(func(name string) string { return values[name] })
+	if err != nil {
+		panic(err)
+	}
+	// Applications can pass os.Getenv and then override individual fields.
+	cfg.DefaultModel = "pinned-model"
+	fmt.Println(cfg.DefaultModel, cfg.Logger == nil, cfg.Retry.MaxRetries)
+	// Output: pinned-model true 0
+}
+
+func ExampleDefaultRetryPolicy() {
+	policy := jev.DefaultRetryPolicy()
+	policy.MaxRetries = 3
+	policy.HTTPStatuses = []int{429, 503}
+	fmt.Println(policy.MaxRetries, policy.BackoffInitial, policy.BackoffMax)
+	fmt.Println(policy.HTTPStatuses)
+	// Pass policy in Config.Retry or WithRetry(policy). A context deadline bounds
+	// the whole call; WithRetry(jev.RetryPolicy{}) disables retries for one call.
+
+	// Output:
+	// 3 500ms 5s
+	// [429 503]
+}
+
+func ExampleRawQuestion() {
+	question := jev.RawQuestion{"type": "noul", "instructions": nil, "future_option": true}
+	encoded, err := json.Marshal(question)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(string(encoded))
+	// Output: {"future_option":true,"instructions":null,"type":"noul"}
+}
+
+func ExampleClient_SystemOneRaw() {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("x-typesafe-request-id", "example-request")
+		if _, err := fmt.Fprint(w, `{"future_response":true}`); err != nil {
+			panic(err)
+		}
+	}))
+	defer server.Close()
+	client, err := jev.NewClient(jev.Config{APIKey: "example-key", BaseURL: server.URL, HTTPClient: server.Client()})
+	if err != nil {
+		panic(err)
+	}
+	response, err := client.SystemOneRaw(context.Background(), jev.Request{State: "example", Questions: map[string]jev.Question{"ok": jev.Noul{Instructions: "Acceptable?"}}}, jev.WithTimeout(time.Second))
+	if err != nil {
+		panic(err)
+	}
+	// The body is buffered and the network resource has already been closed.
+	fmt.Println(response.StatusCode, response.RequestID, string(response.Body))
+	// Output: 200 example-request {"future_response":true}
+}
+
+func ExampleResponse_Nouls() {
+	var response jev.Response
+	if err := json.Unmarshal([]byte(`{"model":"jev","usage":{},"answers":{"ok":{"type":"noul","noul":0.9}}}`), &response); err != nil {
+		panic(err)
+	}
+	fmt.Println(response.Nouls()["ok"].Noul)
+	fmt.Println(response.Usage.InputTokens == nil)
+	// Output:
+	// 0.9
+	// true
 }

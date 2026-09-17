@@ -7,8 +7,11 @@
 // A request combines JSON-encodable state with named Noul, Choice, or Score
 // questions. Each question is answered independently against the same state.
 // A NoulAnswer is a probability; a ChoiceAnswer selects a label; a ScoreAnswer
-// contains an expected score that may be fractional. Use Client.ListModels to
-// discover available models. DefaultModel is a moving alias, not a pinned version.
+// contains an expected score that may be fractional. RawQuestion and Request.ExtraBody
+// allow extensible payloads. Unknown answer types are retained as RawAnswer.
+// Response.Nouls, Response.Choices and Response.Scores provide typed answer maps.
+// Token counts are pointers: nil means unavailable, not zero. Use Client.ListModels to
+// discover available models through ModelsResponse.Models. DefaultModel is a moving alias, not a pinned version.
 //
 // # Configuration and ownership
 //
@@ -23,6 +26,10 @@
 // There is no pagination or input truncation. ConfigFromEnv accepts an explicit
 // lookup function, and never creates a logger or enables retries.
 //
+// SystemOneRaw and ListModelsRaw skip typed decoding and return HTTPResponse.
+// Both typed responses also retain this fully buffered metadata. Network bodies
+// are already closed, and HTTP metadata is excluded from JSON serialization.
+//
 // # Limits and errors
 //
 // Config.MaxRequestBytes optionally limits the complete serialized request,
@@ -36,7 +43,9 @@
 // response data for diagnostics; its Body may include submitted content, so
 // avoid indiscriminate logging. Wrapped transport errors preserve causes for
 // errors.Is, including context cancellation. Invalid or incomplete responses
-// return errors instead of partially populated results.
+// return *ResponseValidationError with field paths and raw HTTP diagnostics.
+// *TransportError preserves connection/body-read causes and exposes Timeout.
+// APIError also exposes a server Message, Endpoint and optional RetryAfter delay.
 //
 // See https://docs.typesafe.ai/api for the service contract and model limits.
 package jev

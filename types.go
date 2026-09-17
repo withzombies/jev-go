@@ -3,10 +3,12 @@ package jev
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 )
 
-// Question is one of Noul, Choice, or Score. Instructions and descriptions may
+// Question is one of Noul, Choice, Score, or RawQuestion. Instructions and descriptions may
 // contain text, JSON objects, or arrays. See the API for supported content.
 type Question interface {
 	json.Marshaler
@@ -41,7 +43,7 @@ type Choice struct {
 type Score struct {
 	// Instructions describes the judgment to make against the request state.
 	Instructions any `json:"instructions,omitempty"`
-	// Criteria lists level descriptions in increasing order, starting at score zero.
+	// Criteria lists at least one level description, starting at score zero.
 	Criteria []any `json:"criteria"`
 }
 
@@ -77,17 +79,20 @@ func (q Score) MarshalJSON() ([]byte, error) {
 }
 
 // Request evaluates State against independently answered named Questions.
-// State must encode as a JSON string, object, or array. Empty Model uses DefaultModel.
+// State must encode as a JSON string, object, or array. Empty Model uses the client default.
 type Request struct {
+	// ExtraBody shallow-merges over all standard fields, including explicit nulls.
+	// Validation and the byte cap apply to the final encoded payload.
+	ExtraBody map[string]any `json:"-"`
 	// State is the shared JSON-encodable context for all questions.
 	State any `json:"state"`
 	// Questions maps caller-chosen identifiers to non-nil question values.
 	Questions map[string]Question `json:"questions"`
-	// Model selects a model name or alias; empty uses DefaultModel.
+	// Model selects a model name or alias; empty uses the client default.
 	Model string `json:"model"`
 }
 
-// Answer is a NoulAnswer, ChoiceAnswer, or ScoreAnswer, decoded by its wire type.
+// Answer is a NoulAnswer, ChoiceAnswer, ScoreAnswer or RawAnswer, decoded by its wire type.
 type Answer interface {
 	json.Marshaler
 	answerType() string
@@ -155,14 +160,17 @@ func (a ScoreAnswer) MarshalJSON() ([]byte, error) {
 
 // Usage contains the token counts returned by the service.
 type Usage struct {
-	// InputTokens is the input token count reported by the service.
-	InputTokens int `json:"input_tokens"`
-	// OutputTokens is the output token count reported by the service.
-	OutputTokens int `json:"output_tokens"`
+	// InputTokens is the reported input count; nil means absent or null.
+	InputTokens *int `json:"input_tokens"`
+	// OutputTokens is the reported output count; nil means absent or null.
+	OutputTokens *int `json:"output_tokens"`
 }
 
 // Response contains one typed answer per question and server metadata.
 type Response struct {
+	// HTTPResponse holds buffered transport metadata; nil for manually decoded values.
+	// It is excluded from JSON serialization and owns no open network resources.
+	HTTPResponse *HTTPResponse `json:"-"`
 	// Model is the resolved model used for evaluation.
 	Model string `json:"model"`
 	// Answers maps question identifiers to typed answer values.
@@ -170,7 +178,7 @@ type Response struct {
 	// Usage contains the token counts returned by the service.
 	Usage Usage `json:"usage"`
 	// RequestID is the x-typesafe-request-id response header, if present.
-	RequestID string `json:"request_id,omitempty"`
+	RequestID string `json:"-"`
 }
 
 // Model describes a model or alias accepted by the service.
@@ -183,62 +191,152 @@ type Model struct {
 	ReleaseDate string `json:"release_date"`
 }
 
-// UnmarshalJSON decodes the API's discriminated answer objects. Unknown types
-// and missing required fields are errors, never implicit zero-valued answers.
+// HTTPResponse is a fully buffered response. The network body is already closed;
+// Headers and Body belong to this result. It is not a streaming interface.
+type HTTPResponse struct {
+	// StatusCode is the HTTP response status.
+	StatusCode int
+	// Headers contains a snapshot of response headers.
+	Headers http.Header
+	// Body contains the original response bytes and may contain submitted data.
+	Body []byte
+	// RequestID is the x-typesafe-request-id header, or empty when absent.
+	RequestID string
+	// Endpoint is the HTTP method and relative API path.
+	Endpoint string
+}
+
+// ModelsResponse holds available models and their originating HTTP response.
+type ModelsResponse struct {
+	// Models lists the available models and aliases.
+	Models []Model `json:"models"`
+	// HTTPResponse contains buffered transport metadata, excluded from JSON.
+	HTTPResponse *HTTPResponse `json:"-"`
+	// RequestID is the x-typesafe-request-id header, if present.
+	RequestID string `json:"-"`
+}
+
+// RawAnswer preserves a future answer type without interpreting its fields.
+type RawAnswer struct {
+	// Type is the nonempty wire discriminator.
+	Type string
+	// Body is the complete JSON answer object, including its type.
+	Body json.RawMessage
+}
+
+func (a RawAnswer) answerType() string { return a.Type }
+
+// MarshalJSON preserves the original JSON answer object.
+func (a RawAnswer) MarshalJSON() ([]byte, error) { return a.Body.MarshalJSON() }
+
+// Nouls returns a new map containing only typed yes/no answers.
+func (r Response) Nouls() map[string]NoulAnswer { return answerGroup[NoulAnswer](r.Answers) }
+
+// Choices returns a new map containing only typed choice answers. Nested maps
+// within each answer remain shared with Answers.
+func (r Response) Choices() map[string]ChoiceAnswer { return answerGroup[ChoiceAnswer](r.Answers) }
+
+// Scores returns a new map containing only typed score answers. Nested maps
+// within each answer remain shared with Answers.
+func (r Response) Scores() map[string]ScoreAnswer { return answerGroup[ScoreAnswer](r.Answers) }
+func answerGroup[T Answer](answers map[string]Answer) map[string]T {
+	group := make(map[string]T)
+	for name, answer := range answers {
+		if typed, ok := answer.(T); ok {
+			group[name] = typed
+		}
+	}
+	return group
+}
+
+// UnmarshalJSON decodes known answers strictly and preserves future answer types
+// as RawAnswer. Missing required fields never become implicit zero-valued answers.
+// Usage counts may be absent or null; transport metadata is not read from JSON.
 func (r *Response) UnmarshalJSON(data []byte) error {
 	fields, err := requiredFields(data, "model", "answers", "usage")
 	if err != nil {
 		return err
 	}
-	if _, err := requiredFields(fields["usage"], "input_tokens", "output_tokens"); err != nil {
-		return fmt.Errorf("usage: %w", err)
-	}
-	var wire struct {
-		Model     string                     `json:"model"`
-		Answers   map[string]json.RawMessage `json:"answers"`
-		Usage     Usage                      `json:"usage"`
-		RequestID string                     `json:"request_id"`
-	}
-	if err := json.Unmarshal(data, &wire); err != nil {
+	var result Response
+	if err := decodeAt(fields["model"], &result.Model, "model"); err != nil {
 		return err
 	}
-	if wire.Model == "" {
-		return fmt.Errorf("model is empty")
+	if result.Model == "" {
+		return at("model", fmt.Errorf("model is empty"))
 	}
-	answers := make(map[string]Answer, len(wire.Answers))
-	for name, raw := range wire.Answers {
+	if err := decodeAt(fields["usage"], &result.Usage, "usage"); err != nil {
+		return err
+	}
+	var rawAnswers map[string]json.RawMessage
+	if err := decodeAt(fields["answers"], &rawAnswers, "answers"); err != nil {
+		return err
+	}
+	result.Answers = make(map[string]Answer, len(rawAnswers))
+	for name, raw := range rawAnswers {
 		answer, err := decodeAnswer(raw)
 		if err != nil {
-			return fmt.Errorf("answer %q: %w", name, err)
+			return at("answers."+name, err)
 		}
-		answers[name] = answer
+		result.Answers[name] = answer
 	}
-	*r = Response{Model: wire.Model, Answers: answers, Usage: wire.Usage, RequestID: wire.RequestID}
+	*r = result
 	return nil
 }
 
+type fieldError struct {
+	path string
+	err  error
+}
+
+func (e *fieldError) Error() string { return fmt.Sprintf("%s: %v", e.path, e.err) }
+func (e *fieldError) Unwrap() error { return e.err }
+func at(path string, err error) error {
+	var nested *fieldError
+	if errors.As(err, &nested) && nested.path != "" {
+		if path != "" {
+			path += "."
+		}
+		path += nested.path
+	}
+	return &fieldError{path: path, err: err}
+}
+func decodeAt(data []byte, target any, path string) error {
+	if err := json.Unmarshal(data, target); err != nil {
+		var typed *json.UnmarshalTypeError
+		if errors.As(err, &typed) && typed.Field != "" {
+			if path != "" {
+				path += "."
+			}
+			path += typed.Field
+		}
+		return at(path, err)
+	}
+	return nil
+}
 func requiredFields(data []byte, names ...string) (map[string]json.RawMessage, error) {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(data, &fields); err != nil {
-		return nil, err
+		return nil, at("", err)
 	}
 	for _, name := range names {
 		value := bytes.TrimSpace(fields[name])
 		if len(value) == 0 || bytes.Equal(value, []byte("null")) {
-			return nil, fmt.Errorf("missing or null %s", name)
+			return nil, at(name, fmt.Errorf("missing or null field"))
 		}
 	}
 	return fields, nil
 }
-
 func decodeAnswer(raw []byte) (Answer, error) {
 	fields, err := requiredFields(raw, "type")
 	if err != nil {
 		return nil, err
 	}
 	var kind string
-	if err := json.Unmarshal(fields["type"], &kind); err != nil {
+	if err := decodeAt(fields["type"], &kind, "type"); err != nil {
 		return nil, err
+	}
+	if kind == "" {
+		return nil, at("type", fmt.Errorf("empty answer type"))
 	}
 	switch kind {
 	case "noul":
@@ -246,11 +344,11 @@ func decodeAnswer(raw []byte) (Answer, error) {
 			return nil, err
 		}
 		var a NoulAnswer
-		if err := json.Unmarshal(raw, &a); err != nil {
+		if err := decodeAt(raw, &a, ""); err != nil {
 			return nil, err
 		}
 		if a.Noul < 0 || a.Noul > 1 {
-			return nil, fmt.Errorf("noul outside [0,1]")
+			return nil, at("noul", fmt.Errorf("outside [0,1]"))
 		}
 		return a, nil
 	case "choice":
@@ -258,7 +356,7 @@ func decodeAnswer(raw []byte) (Answer, error) {
 			return nil, err
 		}
 		var a ChoiceAnswer
-		if err := json.Unmarshal(raw, &a); err != nil {
+		if err := decodeAt(raw, &a, ""); err != nil {
 			return nil, err
 		}
 		if err := validateDistribution(a.Confidence, fields["probabilities"]); err != nil {
@@ -270,35 +368,34 @@ func decodeAnswer(raw []byte) (Answer, error) {
 			return nil, err
 		}
 		var a ScoreAnswer
-		if err := json.Unmarshal(raw, &a); err != nil {
+		if err := decodeAt(raw, &a, ""); err != nil {
 			return nil, err
 		}
 		if a.Score < 0 {
-			return nil, fmt.Errorf("score is negative")
+			return nil, at("score", fmt.Errorf("negative score"))
 		}
 		if err := validateDistribution(a.Confidence, fields["probabilities"]); err != nil {
 			return nil, err
 		}
 		return a, nil
 	default:
-		return nil, fmt.Errorf("unknown answer type %q", kind)
+		return RawAnswer{Type: kind, Body: append(json.RawMessage(nil), raw...)}, nil
 	}
 }
-
 func validateDistribution(confidence float64, raw json.RawMessage) error {
 	if confidence < 0 || confidence > 1 {
-		return fmt.Errorf("confidence outside [0,1]")
+		return at("confidence", fmt.Errorf("outside [0,1]"))
 	}
 	var probabilities map[string]*float64
-	if err := json.Unmarshal(raw, &probabilities); err != nil {
+	if err := decodeAt(raw, &probabilities, "probabilities"); err != nil {
 		return err
 	}
 	if len(probabilities) == 0 {
-		return fmt.Errorf("probabilities are empty")
+		return at("probabilities", fmt.Errorf("empty distribution"))
 	}
 	for label, p := range probabilities {
 		if p == nil || *p < 0 || *p > 1 {
-			return fmt.Errorf("probability %q is null or outside [0,1]", label)
+			return at("probabilities."+label, fmt.Errorf("null or outside [0,1]"))
 		}
 	}
 	return nil

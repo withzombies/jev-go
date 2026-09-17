@@ -93,7 +93,7 @@ func TestListModels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(models) != 1 || models[0].Name != "jev-latest" || models[0].Description != "stable" || models[0].ReleaseDate != "2026-09-10T00:00:00Z" {
+	if len(models.Models) != 1 || models.Models[0].Name != "jev-latest" || models.Models[0].Description != "stable" || models.Models[0].ReleaseDate != "2026-09-10T00:00:00Z" {
 		t.Fatalf("models: %+v", models)
 	}
 }

@@ -4,7 +4,7 @@ A small, unofficial Go client for [TypeSafe's System One API](https://docs.types
 
 Module: `github.com/withzombies/jev-go` · Package: `jev`
 
-[Library usage](#use-in-another-project) · [Configuration](#configuration-and-errors) ·
+[Library usage](#use-in-another-project) · [Configuration](#configuration-and-errors) · [SDK parity](SDK_PARITY.md) ·
 [Triage](#explore-pr-questions-with-triage) · [Development](#development) ·
 [Troubleshooting](#troubleshooting) · [License](#license)
 
@@ -14,18 +14,16 @@ to use an old security patch. CI tests the latest Go 1.26 patch and stable Go on
 The [package overview](doc.go) explains ownership, concurrency, and error handling.
 Run `go doc -all .` for the local API reference. The [executable examples](example_test.go)
 cover evaluation, model listing, custom HTTP configuration, and typed errors; all
-run without credentials under `go test`. Once published, the same API comments and
-examples appear on [pkg.go.dev](https://pkg.go.dev/github.com/withzombies/jev-go).
+run without credentials under `go test`. The same API comments and
+examples are available on [pkg.go.dev](https://pkg.go.dev/github.com/withzombies/jev-go).
 
 ## Use in another project
-
-Once the repository is published:
 
 ```sh
 go get github.com/withzombies/jev-go
 ```
 
-For local development before publishing, add a `replace` directive in the consuming project's `go.mod` pointing to this checkout:
+For local development, add a `replace` directive in the consuming project's `go.mod` pointing to this checkout:
 
 ```go
 require github.com/withzombies/jev-go v0.0.0
@@ -78,18 +76,42 @@ func main() {
 
 `Noul` returns a probability of yes without a separate confidence field. `Choice` returns a label, probabilities and confidence. `Score` returns a possibly fractional expected score, probabilities, confidence and a legend. Score map keys remain strings, as on the wire. Instructions and criteria can contain structured JSON; use `NoulCriteria` to optionally describe true/false outcomes.
 
-`Response` also includes the resolved model, input/output token usage, and server request ID. `client.ListModels(ctx)` returns available model names, descriptions and release dates.
+`Response` includes the resolved model, nullable input/output token counts, server
+request ID, and a buffered `HTTPResponse` with status, headers, and original body.
+`client.ListModels(ctx)` returns a `*ModelsResponse`; iterate its `Models` field.
+Its request ID and HTTP metadata are available too. HTTP metadata is excluded from
+JSON serialization. Network bodies are already closed before either method returns.
+
+`result.Nouls()`, `result.Choices()`, and `result.Scores()` return typed answer maps.
+Use the map's normal comma-ok lookup to distinguish missing answers from zero values.
+The returned maps are new; nested maps within answers remain shared. Token counts
+are `*int`: nil means absent or null, and a pointer to zero means a reported zero.
+
+For extensible payloads, use `RawQuestion` and `Request.ExtraBody`. Raw questions
+preserve unknown fields and explicit JSON nulls. ExtraBody shallowly overrides
+standard fields, including state, model, and questions; objects are replaced.
+Validation and the byte cap apply to this final payload. Known score questions need
+at least one criterion, matching the live API. Unknown answer types are retained as
+`RawAnswer`; known types remain strictly validated against the effective questions.
+
+`SystemOneRaw` and `ListModelsRaw` return buffered `*HTTPResponse` values without
+typed decoding. They use the same request options, retries, byte cap, and non-2xx
+error handling. These methods do not stream and require no response-body cleanup.
+See the [capability matrix](SDK_PARITY.md) for the pinned upstream versions and
+explicit mappings of Python/TypeScript features to Go.
 
 ## Configuration and errors
 
-- `Config.APIKey` is required. The **library does not read environment variables**; applications choose where credentials come from. The example application reads `TYPESAFE_API_KEY`, matching the Python SDK.
+- `Config.APIKey` is required. `NewClient` **does not read environment variables**; applications choose where credentials come from. The example application reads `TYPESAFE_API_KEY`, matching the Python SDK.
 - `Config.BaseURL` defaults to `https://api.typesafe.ai`. Set it for an HTTP proxy or local test server.
 - `Config.HTTPClient` defaults to a client with a 10-second timeout. Supply your own `*http.Client` and `http.RoundTripper` for transport behavior. The supplied client is never mutated or closed.
 - `Config.MaxRequestBytes` is an optional cap on the complete encoded JSON request, including state, questions, model, and JSON escaping. Zero disables it; negative values are invalid. Oversized requests return `*jev.RequestSizeError` with `Size` and `Limit` before HTTP. The client never truncates input. For example, set `MaxRequestBytes: 64 * 1024` to apply a 64 KiB request budget. This is a byte cap, not a tokenizer or a guarantee that Jev will accept the request.
-- `Request.Model` defaults to `jev-latest`; set a versioned model to compare repeatable experiments. The alias can change over time.
+- `Request.Model` inherits `Config.DefaultModel`, which defaults to `jev-latest`; set a versioned model to compare repeatable experiments. The alias can change over time.
 - Both methods accept a context. Transport errors retain their cause for `errors.Is` and `errors.As`.
 - Non-2xx responses return `*jev.APIError` with `StatusCode`, `Body`, `Headers`, `RequestID`, and best-effort `ErrorType` from `detail.error_type`. Use `errors.As` to inspect the error; `ErrorType == "max_tokens_exceeded"` identifies a server context-limit rejection. Its error string omits the body, which may echo submitted content. Retry headers are accessible to callers. Retries are **disabled by default**; opt in with `Retry: jev.DefaultRetryPolicy()`.
-- Malformed responses, missing answers and mismatched answer types return errors. Further request constraints are validated by the service.
+- Malformed responses, missing answers and mismatched answer types return `*ResponseValidationError` with a field path, wrapped cause, and buffered HTTP diagnostics. Further request constraints are validated by the service.
+- `*TransportError` wraps connection and body-read errors; `Timeout()` distinguishes attempt timeouts. Standard context errors identify caller cancellation and deadlines.
+- `APIError.Message`, `Endpoint`, and nullable `RetryAfter` expose additional diagnostics. Error strings omit server messages; accessing those fields is an explicit decision to handle potentially sensitive content. Use standard HTTP status constants with `StatusCode` instead of language-specific exception subclasses.
 - Reuse clients concurrently, but do not mutate shared requests or HTTP client configuration during calls.
 
 Optional configuration adds `DefaultModel`, `Headers`, `Timeout`, and `Retry`.
@@ -200,7 +222,7 @@ The [CI workflow](.github/workflows/ci.yml) runs on pull requests, pushes to `ma
 and manual dispatch. Linux test jobs use Go 1.26.x and stable Go; the quality job
 runs once on stable Go. Workflows use pinned actions, read-only repository access,
 timeouts, and cancellation of superseded runs. They never call the live Jev API.
-This checkout has not been published; hosted CI starts after it is pushed to GitHub.
+Hosted CI verifies pushes to the published GitHub repository.
 
 [AGENTS.md](AGENTS.md) describes the repository layout, design constraints, and agent
 verification workflow. Task records live in `plans/active`.

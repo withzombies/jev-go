@@ -49,7 +49,7 @@ func TestResponseDecodesTypedAnswersAndRoundTrips(t *testing.T) {
 	if err := json.Unmarshal([]byte(mixedResponse), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Model != "jev-1.13.0" || got.Usage.InputTokens != 12 || got.Usage.OutputTokens != 8 {
+	if got.Model != "jev-1.13.0" || (got.Usage.InputTokens == nil || *got.Usage.InputTokens != 12) || (got.Usage.OutputTokens == nil || *got.Usage.OutputTokens != 8) {
 		t.Fatalf("metadata: %+v", got)
 	}
 	if v, ok := got.Answers["urgent"].(jev.NoulAnswer); !ok || v.Noul != 0 {
@@ -78,7 +78,7 @@ func TestResponseRejectsMalformedAnswers(t *testing.T) {
 	for _, answer := range []string{
 		`{"type":"noul"}`, `{"type":"noul","noul":null}`, `{"type":"noul","noul":"0"}`,
 		`{"type":"noul","noul":1.1}`, `{"type":"noul","noul":-0.1}`,
-		`{"type":"other"}`, `null`, `{"noul":0}`,
+		`{"type":""}`, `null`, `{"noul":0}`,
 		`{"type":"choice","choice":"bug"}`,
 		`{"type":"choice","choice":"bug","confidence":1.1,"probabilities":{"bug":1}}`,
 		`{"type":"choice","choice":"bug","confidence":1,"probabilities":{"bug":null}}`,

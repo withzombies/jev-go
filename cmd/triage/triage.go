@@ -117,7 +117,7 @@ func run(ctx context.Context, eval evaluator, in io.Reader, out io.Writer, opts 
 	for _, reason := range result.Reasons {
 		fmt.Fprintf(&text, "- %s\n", reason)
 	}
-	fmt.Fprintf(&text, "\nModel: %s | Tokens: %d input, %d output\n", result.Model, result.Usage.InputTokens, result.Usage.OutputTokens)
+	fmt.Fprintf(&text, "\nModel: %s | Tokens: %s input, %s output\n", result.Model, tokenCount(result.Usage.InputTokens), tokenCount(result.Usage.OutputTokens))
 	if result.RequestID != "" {
 		fmt.Fprintf(&text, "Request: %s\n", result.RequestID)
 	}
@@ -178,4 +178,11 @@ func noulProbability(answers map[string]jev.Answer, id string) (float64, error) 
 		return 0, fmt.Errorf("invalid probability for %q", id)
 	}
 	return a.Noul, nil
+}
+
+func tokenCount(count *int) string {
+	if count == nil {
+		return "unknown"
+	}
+	return fmt.Sprint(*count)
 }

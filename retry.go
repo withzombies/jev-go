@@ -33,7 +33,7 @@ type RetryPolicy struct {
 	RetryConnectionErrors bool
 	// RetryTimeouts controls attempt timeouts independently of connection errors.
 	RetryTimeouts bool
-	// AdditionalRetry may opt other HTTP or transport failures into retrying.
+	// AdditionalRetry may opt HTTP, transport or response-validation failures into retrying.
 	// It cannot override caller cancellation or the retry limit. Local validation
 	// and encoding errors never reach it.
 	AdditionalRetry func(error) bool
@@ -119,7 +119,13 @@ func retryDelay(p RetryPolicy, attempt int, headers http.Header, now time.Time, 
 			delay *= 2
 		}
 	}
-	return time.Duration(float64(delay) * (1 - random*p.BackoffJitter))
+	adjusted := float64(delay) * (1 - random*p.BackoffJitter)
+	// Float conversion can round large durations up beyond int64. Jitter only
+	// subtracts, so preserve the integer cap before converting back.
+	if adjusted >= float64(delay) {
+		return delay
+	}
+	return time.Duration(adjusted)
 }
 
 func parseRetryAfter(headers http.Header, now time.Time) (time.Duration, bool) {

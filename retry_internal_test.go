@@ -46,3 +46,12 @@ func TestRetryDelay(t *testing.T) {
 		t.Fatal("accepted NaN jitter")
 	}
 }
+
+func TestRetryDelayDoesNotOverflow(t *testing.T) {
+	for _, delay := range []time.Duration{time.Duration(math.MaxInt64), time.Duration(math.MaxInt64 - 1)} {
+		p := RetryPolicy{BackoffInitial: delay, BackoffMax: delay}
+		if got := retryDelay(p, 1000, nil, time.Time{}, 0); got != delay {
+			t.Fatalf("overflowed or rounded delay: got %d want %d", got, delay)
+		}
+	}
+}
