@@ -1,6 +1,6 @@
 # Context
 
-Initial workspace empty, no Git repository. Go 1.26.4 and gh available. TYPESAFE_AI_API_KEY present (never record its value). Module path chosen by user. User explicitly requires TDD and DI and wants the CLI only as an experiment.
+Initial workspace empty, no Git repository. Go 1.26.4 and gh available. An API credential was available (never record its value). Module path chosen by user. User explicitly requires TDD and DI and wants the CLI only as an experiment.
 
 ## Research (2026-09-17)
 
@@ -34,3 +34,10 @@ Inject a standard *http.Client, leaving ownership with caller. Consumer-defined 
 - Post-cancellation-fix gates: go test -race ./..., go build ./..., go build -o triage ./cmd/triage, go vet ./..., gofmt -l . and git diff --check all passed. The local ignored ./triage binary is ready to run.
 - Reviewed against plan: two endpoint methods, standard-library dependencies, concrete public client, explicit HTTP injection, typed JSON questions/answers, client ownership and cancellation, no retries/global configuration, independent consumer smoke, editable stdin example, pure policy and complete reports. No TODO/FIXME or subprocess/GitHub calls in production code.
 - Library is locally usable and committed; no remote repository was created or published. README documents both local replace usage and future installation.
+
+## Credential environment naming
+
+The triage command and README examples now use `TYPESAFE_API_KEY`, matching the
+Python SDK. The library still receives its credential explicitly via Config.
+The existing command test first failed on the environment lookup and diagnostic;
+implementation and documentation were then updated without a compatibility alias.

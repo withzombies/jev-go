@@ -261,13 +261,13 @@ func TestCommandFlagsAndEnvironment(t *testing.T) {
 		{"help", []string{"--help"}, "", 0, "Usage"},
 		{"unknown flag", []string{"--unknown"}, "", 1, "flag provided"},
 		{"positional arguments", []string{"8556"}, "", 1, "stdin"},
-		{"missing key", nil, "", 1, "TYPESAFE_AI_API_KEY"},
+		{"missing key", nil, "", 1, "TYPESAFE_API_KEY"},
 		{"empty input", []string{"--json", "--model", "pinned"}, "dummy-key", 1, "empty"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var out, stderr bytes.Buffer
 			getenv := func(name string) string {
-				if name != "TYPESAFE_AI_API_KEY" {
+				if name != "TYPESAFE_API_KEY" {
 					t.Errorf("unexpected env var %s", name)
 				}
 				return tc.key

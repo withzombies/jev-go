@@ -53,9 +53,9 @@ func command(ctx context.Context, args []string, in io.ReadCloser, out, stderr i
 		_, _ = fmt.Fprintln(stderr, "triage: --context-bytes must be positive")
 		return 1
 	}
-	client, err := jev.NewClient(jev.Config{APIKey: getenv("TYPESAFE_AI_API_KEY")})
+	client, err := jev.NewClient(jev.Config{APIKey: getenv("TYPESAFE_API_KEY")})
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "triage: configure TYPESAFE_AI_API_KEY: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "triage: configure TYPESAFE_API_KEY: %v\n", err)
 		return 1
 	}
 	if err := run(ctx, client, in, out, opts); err != nil {

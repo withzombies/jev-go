@@ -47,7 +47,7 @@ import (
 
 func main() {
     client, err := jev.NewClient(jev.Config{
-        APIKey: os.Getenv("TYPESAFE_AI_API_KEY"),
+        APIKey: os.Getenv("TYPESAFE_API_KEY"),
     })
     if err != nil {
         log.Fatal(err)
@@ -82,7 +82,7 @@ func main() {
 
 ## Configuration and errors
 
-- `Config.APIKey` is required. The **library does not read environment variables**; applications choose where credentials come from. The Python SDK uses `TYPESAFE_API_KEY`; the example application here uses `TYPESAFE_AI_API_KEY`.
+- `Config.APIKey` is required. The **library does not read environment variables**; applications choose where credentials come from. The example application reads `TYPESAFE_API_KEY`, matching the Python SDK.
 - `Config.BaseURL` defaults to `https://api.typesafe.ai`. Set it for an HTTP proxy or local test server.
 - `Config.HTTPClient` defaults to a client with a 10-second timeout. Supply your own `*http.Client` and `http.RoundTripper` for transport behavior. The supplied client is never mutated or closed.
 - `Config.MaxRequestBytes` is an optional cap on the complete encoded JSON request, including state, questions, model, and JSON escaping. Zero disables it; negative values are invalid. Oversized requests return `*jev.RequestSizeError` with `Size` and `Limit` before HTTP. The client never truncates input. For example, set `MaxRequestBytes: 64 * 1024` to apply a 64 KiB request budget. This is a byte cap, not a tokenizer or a guarantee that Jev will accept the request.
@@ -112,7 +112,7 @@ triage --model jev-1.13.0 < change.patch
 triage --context-bytes 16384 --json < change.patch
 ```
 
-Set `TYPESAFE_AI_API_KEY` in the command's environment. It sends only the **first 24,576 stdin bytes** to TypeSafe in one evaluation request. Set `--context-bytes` to another positive byte budget. A cut through a UTF-8 character moves back to that character’s start. Remaining stdin is consumed and discarded so pipeline producers can finish, without retaining the full input. There is no pagination.
+Set `TYPESAFE_API_KEY` in the command's environment. It sends only the **first 24,576 stdin bytes** to TypeSafe in one evaluation request. Set `--context-bytes` to another positive byte budget. A cut through a UTF-8 character moves back to that character’s start. Remaining stdin is consumed and discarded so pipeline producers can finish, without retaining the full input. There is no pagination.
 
 The CLI budget limits raw input, separately from the module’s optional complete-request cap; the CLI leaves that module cap disabled. Questions also consume context. Jev documents 32k tokens for state plus the longest question and 64k for state plus all questions ([model limits](https://docs.typesafe.ai/model-jaggedness/jev-1.13)). Byte limits do not measure those tokens. Server input limits and rate limits still surface as errors; context errors suggest reducing `--context-bytes`. The command does not invoke `gh`, read repository files, execute patch code, or submit reviews.
 
@@ -184,7 +184,7 @@ verification workflow. Task records live in `plans/active`.
 
 | Symptom | Next step |
 | --- | --- |
-| Missing or invalid API key | Supply `Config.APIKey`; for triage, set `TYPESAFE_AI_API_KEY`. The module does not read environment variables. |
+| Missing or invalid API key | Supply `Config.APIKey`; for triage, set `TYPESAFE_API_KEY`. The module does not read environment variables. |
 | `RequestSizeError` | Inspect `Size` and `Limit` with `errors.As`; reduce the complete request or deliberately adjust `MaxRequestBytes`. |
 | `max_tokens_exceeded` | Reduce state or question content. In triage, lower `--context-bytes`. Byte budgets are not token counts. |
 | HTTP 401, 429, or another service error | Inspect `APIError.StatusCode`, `Headers`, and `RequestID`; the client does not retry automatically. Treat raw `Body` as potentially sensitive. |
